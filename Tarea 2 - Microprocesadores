@@ -1,0 +1,100 @@
+	.org 0000h;	Aqui establecemos la direccion inicial en la memoria. En esta dirección se ejecutará el programa.
+
+	ld b,69;	Cargamos el numero entero "69" en el registro B. Este puede ser un numero de 0 a 100.	
+
+	ld c,0;		Cargamos el valor 0 en el registro C.	
+
+	ld a,b			Cargamos el contenido del registro B en el registro A (ahora el registro B tiene cargado el número 69)
+
+	cp 0;			Comparamos el contenido de A con 0.
+
+	jr Z, first_jump;	Si el resultado de la comparación anterior fue cero (si A es igual a 0), saltamos a first_jump
+
+	cp 1;			Compara el contenido de A con 1
+		
+	jr Z, first_jump;	Si el valor es igual a 1, saltamos nuevamente a first_jump
+
+	ld d,1;			Cargamos el valor 1 en el registro D, que se va a utilizar para las comparaciones
+
+	ld e,1;			Cargamos el valor 1 en el registro E, que actuará como multiplicador o contador
+
+ciclo:
+
+	ld a,b;			Cargamos el valor de B en A
+
+	cp d;			Comparamos el valor en A con el valor en D
+
+	jr c, second_jump;	Si el valor de A es menor que el de D, saltamos a second_jump
+
+	inc e;			Se incrementa el valor de E (multiplicador o contador)
+
+	ld h,0;			Cargamos el registro H  en 0
+
+	ld l,0;			Cargamos el registro L en 0
+
+multiplicacion:
+
+	ld a,l;			Cargamos el valor de L en A
+
+	add a,e;		Aqui se suma el valor de E (contador) al valor de A
+
+	ld l,a;			Guardamos el valor de la suma en L
+
+	inc h;			Incrementamos el valor de H
+			
+	ld a,e;			Cargamos el valor de E en A
+
+	cp h;			Compara A con H, esto para ver si se ha alcanzado el límite de la multiplicación
+
+	jr nz, multiplicacion;	Si no son iguales, se repite el proceso de multiplicación
+
+	ld d,l;			Cargamos el resultado de la multiplicación (almacenado en L) en el registro D para que lo utilicemos en la siguiente iteración.
+
+	jr ciclo;		Saltamos a Ciclo para repetir el proceso
+
+first_jump:
+
+	ld c,a;			Aqui se guarda el valor de A en C y se salta a la rutina de conversión
+
+	jr convertir;		
+
+second_jump:;			Si A es menor que D, se decrementa el valor de E y se guarda en C, luego saltamos a la rutina de conversión
+
+	dec e
+	ld c,e
+	jr convertir
+
+
+convertir:
+	ld a,b;			Cargamos el valor de B en A nuevamente
+
+	ld l,0;			Cargamos el registro L en 0 para poder comenzar la conversión
+
+loop:
+
+	cp 10;			Comparamos el valor de A con 10
+
+	jr c, done;		Si A es menor que 10, saltamos a done
+
+	sub 10;			Si no, resta 10 de A
+
+	inc l;			Incrementamos L para llevar la cuenta en las decenas
+
+	jr loop;		Repetimos el ciclo hasta que A sea menor que 10
+
+done:
+	sla l;			En sla 1, se realiza una rotación hacia la izquierda del valor de L (esto equivale a multiplicar por 2) cuatro veces, lo que equivale entonces a multiplicar L por 16 ya que son cuatro de estas instrucciones.
+
+	sla l;
+
+	sla l;
+
+	sla l;
+
+	or l;			Combina el valor de A con L mediante una operación OR
+
+	ld B,A;			Cargamos el resultado final en el registro B
+
+	halt;			Detenemos la ejecución del programa
+
+	.end; 			Aqui termina el cógido ensamblador
