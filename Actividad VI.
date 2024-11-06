@@ -97,5 +97,5 @@ int main() {
     oled_draw_text(2, 0, "MORALES");   // Muestro "MORALES" en la tercera línea
     oled_draw_text(3, 0, "MAGANA");    // Muestro "MAGANA" en la cuarta línea
 
-    return 0;  // Fin del programa; 
+    return 0;  // Fin del programa 
 }
