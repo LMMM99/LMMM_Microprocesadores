@@ -1,0 +1,101 @@
+#include <stdio.h>                // Incluyo la biblioteca estándar de entrada/salida 
+#include "pico/stdlib.h"          // Incluyo la biblioteca estándar de la placa Raspberry Pi Pico
+#include "hardware/i2c.h"         // Incluyo la biblioteca de I2C para comunicación con el hardware
+#include "string.h"               // Incluyo la biblioteca estandar de C para trabajar con cadenas de caracteres.
+
+// Definición de constantes para configurar la pantalla OLED
+#define I2C_PORT i2c0           // Selecciono el puerto I2C0 para la comunicación con el OLED
+#define OLED_ADDR 0x3C          // Dirección I2C del OLED; 0x3C es el valor que tiene el OLED
+#define OLED_WIDTH 128          // Ancho del OLED en píxeles (128 píxeles)
+#define OLED_HEIGHT 64          // Altura del OLED en píxeles (64 píxeles)
+
+// Definiciones para el tipo de datos enviados al OLED
+#define OLED_CMD 0x00           // Código que indica que el dato enviado es un comando de control
+#define OLED_DATA 0x40          // Código que indica que el dato enviado es contenido a mostrar en pantalla
+
+// Definiciones de caracteres y dimensiones de la fuente
+#define LOCHAR 65               // Valor ASCII del primer carácter 'A'
+#define HICHAR 90               // Valor ASCII del último carácter 'Z'
+#define FONT_BWIDTH 1           // Ancho en bytes de cada carácter
+#define FONT_HEIGHT 8           // Altura en píxeles de cada carácter (8 filas)
+
+// Defino una fuente simple de caracteres 8x8 solo para letras mayúsculas (A-Z)
+// Cada letra se representa con una matriz de bytes que crea su forma en píxeles
+const char FONT[HICHAR-LOCHAR+1][FONT_HEIGHT*FONT_BWIDTH] = {
+{ 0x00,0x70,0x88,0x88,0xF8,0x88,0x88,0x88 },{ 0x00,0xF0,0x88,0x88,0xF0,0x88,0x88,0xF0 },{ 0x00,0x78,0x80,0x80,0x80,0x80,0x80,0x78 },{ 0x00,0xF0,0x88,0x88,0x88,0x88,0x88,0xF0 },{ 0x00,0xF8,0x80,0x80,0xE0,0x80,0x80,0xF8 },{ 0x00,0xF8,0x80,0x80,0xE0,0x80,0x80,0x80 },{ 0x00,0x78,0x80,0x80,0xB8,0x88,0x88,0x78 },{ 0x00,0x88,0x88,0x88,0xF8,0x88,0x88,0x88 },{ 0x00,0x70,0x20,0x20,0x20,0x20,0x20,0x70 },{ 0x00,0x70,0x10,0x10,0x10,0x10,0x10,0xE0 },{ 0x00,0x90,0x90,0xA0,0xC0,0xA0,0x90,0x90 },{ 0x00,0x80,0x80,0x80,0x80,0x80,0x80,0xF8 },{ 0x00,0x88,0xD8,0xA8,0xA8,0x88,0x88,0x88 },{ 0x00,0xC8,0xC8,0xA8,0xA8,0xA8,0x98,0x98 },{ 0x00,0x70,0x88,0x88,0x88,0x88,0x88,0x70 },{ 0x00,0xF0,0x88,0x88,0xF0,0x80,0x80,0x80 },{ 0x00,0x70,0x88,0x88,0x88,0xA8,0x90,0x68 },{ 0x00,0xF0,0x88,0x88,0xF0,0x88,0x88,0x88 },{ 0x00,0x78,0x80,0x80,0x70,0x08,0x08,0xF0 },{ 0x00,0xF8,0x20,0x20,0x20,0x20,0x20,0x20 },{ 0x00,0x88,0x88,0x88,0x88,0x88,0x88,0x70 },{ 0x00,0x88,0x88,0x88,0x50,0x50,0x20,0x20 },{ 0x00,0x88,0x88,0x88,0xA8,0xA8,0xD8,0x88 },{ 0x00,0x88,0x88,0x50,0x20,0x50,0x88,0x88 },{ 0x00,0x88,0x88,0x50,0x20,0x20,0x20,0x20 },{ 0x00,0xF8,0x08,0x10,0x20,0x40,0x80,0xF8 },};
+
+// Función para inicializar el bus I2C para la pantalla OLED
+void i2c_init_oled() {
+    i2c_init(I2C_PORT, 400 * 1000);   // Configuro la velocidad del I2C a 400kHz
+    gpio_set_function(4, GPIO_FUNC_I2C);  // Configuro el pin GPIO 4 como SDA (línea de datos del I2C)
+    gpio_set_function(5, GPIO_FUNC_I2C);  // Configuro el pin GPIO 5 como SCL (línea de reloj del I2C)
+    gpio_pull_up(4);                  // Activo resistencias pull-up en el pin SDA
+    gpio_pull_up(5);                  // Activo resistencias pull-up en el pin SCL
+}
+
+// Función para enviar un comando específico a la pantalla OLED
+void oled_send_command(uint8_t cmd) {
+    uint8_t data[2] = {OLED_CMD, cmd};  // Creo un arreglo donde el primer byte indica que es un comando, y el segundo es el comando en sí
+    i2c_write_blocking(I2C_PORT, OLED_ADDR, data, 2, false); // Envío el comando por el bus I2C
+}
+
+// Función para inicializar la pantalla OLED
+void oled_init() {
+    uint8_t init_sequence[] = {
+        0xAE, 0x20, 0x00, 0xB0, 0xC8, 0x00, 0x10, 0x40, 0x81, 0xFF, 
+        0xA1, 0xA6, 0xA8, 0x3F, 0xA4, 0xD3, 0x00, 0xD5, 0xF0, 0xD9, 
+        0x22, 0xDA, 0x12, 0xDB, 0x20, 0x8D, 0x14, 0xAF
+    };
+    for (int i = 0; i < sizeof(init_sequence); i++) {
+        oled_send_command(init_sequence[i]);  // Envío cada comando de la secuencia de inicio
+    }
+}
+
+// Función para borrar toda la pantalla OLED (ponerla en negro)
+void oled_clear() {
+    for (int page = 0; page < 8; page++) {  // Recorro cada página (bloque de 8 filas de píxeles)
+        oled_send_command(0xB0 + page);     // Selecciono la página actual
+        oled_send_command(0x00);            // Configuro la columna baja a 0
+        oled_send_command(0x10);            // Configuro la columna alta a 0
+        for (int col = 0; col < OLED_WIDTH; col++) {  // Recorro cada columna dentro de la página
+            uint8_t data[2] = {OLED_DATA, 0x00}; // Envío un byte de 0x00 para apagar los píxeles
+            i2c_write_blocking(I2C_PORT, OLED_ADDR, data, 2, false); // Envío el dato
+        }
+    }
+}
+
+// Función para dibujar un carácter en una posición específica de la pantalla OLED
+void oled_draw_char(uint8_t page, uint8_t col, uint8_t char_index) {
+    oled_send_command(0xB0 + page);               // Selecciono la página en la que quiero dibujar el carácter
+    oled_send_command(0x00 + (col & 0x0F));       // Configuro la columna baja
+    oled_send_command(0x10 + (col >> 4));         // Configuro la columna alta
+    for (int i = 0; i < 8; i++) {                 // Recorro cada fila de píxeles del carácter
+        uint8_t data[2] = {OLED_DATA, FONT[char_index][i]}; // Preparo cada fila de píxeles del carácter
+        i2c_write_blocking(I2C_PORT, OLED_ADDR, data, 2, false); // Envío el byte de datos de la fila al OLED
+    }
+}
+
+// Función para dibujar un texto en una posición específica de la pantalla OLED
+void oled_draw_text(uint8_t page, uint8_t start_col, const char* text) {
+    int length = strlen(text);                     // Obtengo la longitud del texto a mostrar
+    for (int i = 0; i < length; i++) {             // Recorro cada carácter del texto
+        uint8_t char_index = text[i] - 'A';       // Calculo el índice del carácter en mi fuente, restando el valor ASCII de 'A'
+        oled_draw_char(page, start_col + (i * 8), char_index); // Dibujo cada carácter en la pantalla, dejando un espacio de 8 píxeles
+    }
+}
+
+// Función principal del programa
+int main() {
+    stdio_init_all();        // Inicializo la entrada/salida estándar para depuración
+    i2c_init_oled();         // Configuro el bus I2C para comunicarme con el OLED
+    oled_init();             // Ejecuto la secuencia de inicio de la pantalla OLED
+    oled_clear();            // Limpio toda la pantalla OLED para empezar con una pantalla en negro
+
+    // Escribo nombres en varias líneas de la pantalla, cada uno en una línea diferente
+    oled_draw_text(0, 0, "MOISES");    // Muestro "MOISES" en la primera línea
+    oled_draw_text(1, 0, "LEONARDO");  // Muestro "LEONARDO" en la segunda línea
+    oled_draw_text(2, 0, "MORALES");   // Muestro "MORALES" en la tercera línea
+    oled_draw_text(3, 0, "MAGANA");    // Muestro "MAGANA" en la cuarta línea
+
+    return 0;  // Fin del programa; 
+}
