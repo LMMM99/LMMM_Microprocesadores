@@ -1,0 +1,111 @@
+import machine, network, time
+from machine import Pin, I2C
+from time import sleep
+from BME280 import *  # Importo la clase BME280 para leer datos del sensor.
+import BME280  # Importo la librería del sensor BME280.
+import urequests  # Importo librería para hacer solicitudes HTTP.
+from umqtt.simple import MQTTClient  # Importo la librería para trabajar con MQTT.
+
+# Configuro los pines GPIO para los LEDs.
+led_verde = Pin(15, Pin.OUT)  # Uso el GPIO 15 como salida para el LED verde.
+led_rojo = Pin(14, Pin.OUT)   # Uso el GPIO 14 como salida para el LED rojo.
+
+# Configuro los parámetros de conexión para ThingSpeak usando MQTT.
+BROKER = "mqtt3.thingspeak.com"  # Dirección del broker MQTT de ThingSpeak.
+PORT = 1883  # Puerto estándar para conexiones MQTT.
+CLIENT_ID = "HSIkATgdHQweBCQHMhMjKzg"  # ID único para identificar el cliente MQTT.
+PASSWORD = "FALn8BfrRRmIEGsTCieyvC5R"  # Contraseña del cliente MQTT.
+CHANNEL_ID = "2774487"  # ID del canal de ThingSpeak.
+TOPIC = f"channels/{CHANNEL_ID}/publish"  # Tópico al cual se enviarán los datos en ThingSpeak.
+
+# Configuro la URL del Google Apps Script que captura y almacena datos en Google Sheets.
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbxl50w9qABkFWCapB8Aph6W0j6BHrUfaQZDv1Tobys5pWDUiCgTVm-CS8KD6RvgoWke/exec"
+
+# Defino una función para conectarme a una red Wi-Fi.
+def conectar_wifi():
+    red = network.WLAN(network.STA_IF)  # Creo una instancia de la red Wi-Fi.
+    red.active(True)  # Activo el módulo Wi-Fi.
+    while True:
+        ssid = input("Ingrese el SSID de la red: ")  # Solicito el SSID de la red al usuario.
+        password = input("Ingrese el password de la red: ")  # Solicito la contraseña de la red.
+
+        print("Intentando conectar a la red...")
+        red.connect(ssid, password)  # Intento conectarme con las credenciales proporcionadas.
+
+        for _ in range(20):  # Intento durante un período de 10 segundos.
+            if red.isconnected():  # Verifico si la conexión fue exitosa.
+                print("Conexion establecida correctamente.")
+                print(red.ifconfig())  # Imprimo la configuración de red.
+                return red  # Devuelvo el objeto de red conectado.
+            sleep(0.5)  # Espero medio segundo antes de verificar nuevamente.
+
+        print("Error: SSID o password incorrectos")  # Notifico que las credenciales son incorrectas.
+
+# Establezco la conexión Wi-Fi.
+red = conectar_wifi()
+
+# Configuro el bus I2C para comunicarme con el sensor BME280.
+bus = I2C(0, sda=Pin(4), scl=Pin(5))  # Defino los pines SDA y SCL para la comunicación I2C.
+i2c = I2C(id=0, scl=Pin(5), sda=Pin(4))  # Configuro el canal I2C (otra forma de inicializarlo).
+
+# Defino una función para conectarme al broker MQTT.
+def conectar_mqtt():
+    cliente = MQTTClient(CLIENT_ID, BROKER, PORT, CLIENT_ID, PASSWORD)  # Creo el cliente MQTT con los parámetros definidos.
+    try:
+        cliente.connect()  # Intento establecer la conexión con el broker MQTT.
+        print("Conexion al broker MQTT exitosa.")
+    except Exception as e:
+        print("No se pudo conectar al broker MQTT:", e)  # Informo si ocurre algún error.
+        return None  # Devuelvo None si no se pudo conectar.
+    return cliente  # Devuelvo el cliente MQTT si la conexión fue exitosa.
+
+# Establezco la conexión MQTT.
+mqtt_cliente = conectar_mqtt()
+if not mqtt_cliente:  # Si la conexión falla, genero una excepción.
+    raise Exception("No se pudo establecer conexión MQTT.")
+
+# Defino variables para controlar el intervalo entre envíos de datos.
+ultima_peticion = 0  # Variable para almacenar el tiempo del último envío de datos.
+intervalo_peticiones = 15  # Tiempo mínimo en segundos entre cada envío de datos.
+
+# Inicio un bucle infinito para monitorear y enviar datos continuamente.
+while True:
+    try:
+        # Inicializo el sensor BME280 para medir temperatura y presión.
+        bme = BME280.BME280(i2c=i2c)
+        
+        # Leo la temperatura y la presión del sensor.
+        tempC = float(bme.temperature[:-1])  # Obtengo la temperatura como un número flotante.
+        pres = bme.pressure  # Obtengo la presión atmosférica como cadena.
+
+        # Implemento el control de los LEDs en función de la temperatura.
+        if tempC < 23:  # Si la temperatura es menor a 23°C:
+            led_verde.on()  # Enciendo el LED verde.
+            led_rojo.off()  # Apago el LED rojo.
+        else:  # Si la temperatura es igual o mayor a 23°C:
+            led_verde.off()  # Apago el LED verde.
+            led_rojo.on()  # Enciendo el LED rojo.
+
+        # Imprimo las lecturas del sensor en la consola.
+        print('La temperatura actual es: ', tempC)
+        print('La presion actual es: ', pres)
+
+        # Verifico si ha pasado el intervalo definido para enviar datos.
+        if (time.time() - ultima_peticion) > intervalo_peticiones:
+            # Preparo el payload para enviar a ThingSpeak.
+            payload = f"field1={tempC}&field2={pres}"
+            mqtt_cliente.publish(TOPIC, payload)  # Publico los datos en el tópico de ThingSpeak.
+            print(f"Datos enviados a ThingSpeak")
+            
+            # Envío los datos al Google Sheets Web App.
+            data = {"temperature": tempC, "pressure": pres}  # Creo un diccionario con los datos a enviar.
+            response = urequests.post(GOOGLE_SHEETS_URL, json=data)  # Realizo una solicitud POST con los datos.
+            print(f"Datos capturados y enviados a Google Sheets")
+
+            # Actualizo el tiempo del último envío de datos.
+            ultima_peticion = time.time()
+
+    except Exception as e:  # Capturo cualquier error que ocurra.
+        print('Ha surgido un error:', e)
+
+    sleep(5)  # Pauso el bucle por 5 segundos antes de la siguiente iteración.
